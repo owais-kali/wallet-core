@@ -1,0 +1,9 @@
+## Get Coin public key
+
+> coin solana
+> addrDefault
+
+## Generate Seed Phrase
+
+> newMnemonic 128
+> dumpMnemonic

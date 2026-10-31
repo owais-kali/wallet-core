@@ -1,0 +1,176 @@
+Trust Wallet Core walletconsole — Command Cheat Sheet
+======================================================
+
+IMPORTANT SECURITY NOTES
+- Never share your mnemonic, seed, or private key.
+- Do not enter secrets into online explorers or websites.
+- walletconsole does not persist the mnemonic between launches. Restore the same mnemonic with setMnemonic after restarting.
+- Commands below reflect the help output provided by the user. Balance queries use Solana RPC; transaction sending requires additional implementation.
+
+1. GENERATE A SEED PHRASE
+-------------------------
+Generate a 12-word BIP-39 mnemonic:
+> newMnemonic 128
+> dumpMnemonic
+
+Generate a 24-word mnemonic:
+> newMnemonic 256
+> dumpMnemonic
+
+Save the mnemonic securely. Do not use a sample/example phrase for real funds.
+
+2. RESTORE AN EXISTING SEED PHRASE
+----------------------------------
+> setMnemonic word1 word2 word3 ... word12
+
+Replace the example words with your actual mnemonic, in the correct order.
+
+3. DERIVE A DEFAULT COIN ADDRESS
+--------------------------------
+Solana:
+> coin solana
+> dumpDP
+> addrDefault
+
+Bitcoin:
+> coin bitcoin
+> dumpDP
+> addrDefault
+
+Ethereum:
+> coin ethereum
+> dumpDP
+> addrDefault
+
+The address is derived from the current mnemonic. Restore the same mnemonic after restarting to obtain the same address.
+
+4. DERIVE AN ADDRESS USING A SPECIFIC PATH
+------------------------------------------
+Solana example:
+> coin solana
+> addrDP m/44'/501'/0'
+
+Bitcoin example:
+> coin bitcoin
+> addrDP m/84'/0'/0'/0/0
+
+Check dumpDP first. Use a derivation path compatible with the wallet you intend to restore.
+
+5. DERIVE / INSPECT KEYS
+------------------------
+Generate a standalone random 32-byte key:
+> newKey
+
+Derive a public key from a private key:
+> pubPri <private_key>
+
+Derive a private key from the current mnemonic:
+> priDP
+
+Or specify a derivation path:
+> priDP m/44'/501'/0'
+
+Note: The console help lists `priPub <pubKey>`, but private keys cannot generally be recovered from public keys in secure cryptographic systems. Do not rely on this command to recover a real private key.
+
+6. RECEIVE USDT ON SOLANA
+-------------------------
+> coin solana
+> setMnemonic <your mnemonic words>
+> addrDefault
+
+Give the resulting Solana wallet address to the sender and ensure they select the Solana network and USDT token.
+
+Native USDT mint on Solana:
+Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
+
+USDT uses 6 decimal places on Solana.
+
+You generally give the sender your wallet address, not the associated token account (ATA). A USDT ATA may need to be created on-chain before the token can be held.
+
+7. CHECK SOLANA USDT BALANCE
+----------------------------
+Replace YOUR_SOLANA_ADDRESS with the public address from addrDefault:
+
+curl https://api.mainnet-beta.solana.com \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"getTokenAccountsByOwner",
+    "params":[
+      "YOUR_SOLANA_ADDRESS",
+      {
+        "mint":"Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+      },
+      {
+        "encoding":"jsonParsed"
+      }
+    ]
+  }'
+
+Inspect the response's tokenAmount.uiAmountString for the readable balance. If no matching token account exists, the result may contain no USDT accounts.
+
+8. CHECK SOL BALANCE
+--------------------
+Replace YOUR_SOLANA_ADDRESS with your public address:
+
+curl https://api.mainnet-beta.solana.com \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"getBalance",
+    "params":["YOUR_SOLANA_ADDRESS"]
+  }'
+
+The returned value is in lamports. Divide by 1,000,000,000 to convert lamports to SOL.
+
+9. SIGN AND SEND SOLANA USDT
+----------------------------
+There is no built-in sendUSDT or generic transaction-signing command in the console help shown. Additional C++ code is required.
+
+Typical workflow:
+1. Select Solana and restore your mnemonic.
+2. Derive the Solana key/address.
+3. Query your USDT source token account and balance.
+4. Fetch a recent blockhash from Solana RPC.
+5. Derive the recipient's USDT associated token account (ATA).
+6. Include an ATA-creation instruction if needed and appropriate.
+7. Build an SPL Token TransferChecked instruction.
+8. Sign the transaction with Wallet Core.
+9. Serialize the signed transaction.
+10. Broadcast it using Solana RPC sendTransaction.
+11. Check transaction status/confirmation.
+
+Solana mainnet RPC endpoint:
+https://api.mainnet-beta.solana.com
+
+A successful sendTransaction response does not by itself guarantee that the transaction has been confirmed. Verify the status. Check the recipient, mint, amount, network, and fees before broadcasting.
+
+10. OTHER CONSOLE COMMANDS
+--------------------------
+help                    List commands
+coins                   List known coins
+coin solana             Select Solana
+dumpDP                  Show default derivation path
+dumpSeed                Display the BIP-39 seed (SECRET)
+dumpXpub                Display extended public key
+addr <address>          Check an address for the active coin
+addrPub <pubKey>        Derive address from public key
+addrPri <priKey>        Derive address from private key
+buffer                  Display buffered results
+#                       Reference the last result
+#1                      Reference a previous result
+exit / quit             Exit the console
+
+RECOMMENDED TEST FLOW
+---------------------
+1. Generate a mnemonic once with `newMnemonic 128`.
+2. Save it securely.
+3. Derive your Solana address with `coin solana` then `addrDefault`.
+4. Restore the same mnemonic after restarting with `setMnemonic ...`.
+5. Confirm `addrDefault` produces the same address.
+6. Check balances through Solana RPC or a block explorer.
+7. Implement and test transaction construction/signing before sending real funds.
