@@ -17,6 +17,10 @@
 #include <cassert>
 #include <iostream>
 
+namespace TW::Solana::Proto {
+class SigningInput;
+}
+
 namespace TW::WalletConsole {
 
 using namespace std;
@@ -46,6 +50,16 @@ protected:
     bool setCoin(const string& coin, bool force);
     bool checkMinParams(const vector<string>& params, std::size_t n) const;
     void help() const;
+    /// Fill key, sender and blockhash of a Solana signing input from the current mnemonic
+    bool prepareSolanaInput(const string& blockhash, Solana::Proto::SigningInput& input, string& senderAddr);
+    /// Run the Solana signer on a prepared input; res is the encoded signed transaction
+    bool signSolanaInput(const Solana::Proto::SigningInput& input, string& res);
+    /// Sign a native SOL transfer with the Solana key of the current mnemonic
+    bool signSolana(const vector<string>& params, string& res);
+    /// Derive an associated token account
+    bool solanaAta(const vector<string>& params, string& res);
+    /// Sign an SPL token transfer (optionally creating the recipient token account)
+    bool signSolanaToken(const vector<string>& params, string& res);
 };
 
 } // namespace TW::WalletConsole
