@@ -12,7 +12,7 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
-CONSOLE="$DIR/../build/walletconsole/walletconsole"
+CONSOLE="$DIR/../../build/walletconsole/walletconsole"
 
 if [[ $# -ne 2 ]]; then
     echo "usage: $0 <recipient> <lamports>" >&2

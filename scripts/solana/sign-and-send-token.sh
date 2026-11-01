@@ -16,7 +16,7 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
-CONSOLE="$DIR/../build/walletconsole/walletconsole"
+CONSOLE="$DIR/../../build/walletconsole/walletconsole"
 USDT_MINT="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 # Approximate lamports the sender needs: fee only, or fee + rent for a new recipient token account
 MIN_SOL_PLAIN=10000

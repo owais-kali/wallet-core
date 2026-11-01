@@ -60,6 +60,8 @@ protected:
     bool solanaAta(const vector<string>& params, string& res);
     /// Sign an SPL token transfer (optionally creating the recipient token account)
     bool signSolanaToken(const vector<string>& params, string& res);
+    /// Sign a native-segwit BTC transfer from the current mnemonic, spending the given UTXOs
+    bool signBitcoin(const vector<string>& params, string& res);
 };
 
 } // namespace TW::WalletConsole

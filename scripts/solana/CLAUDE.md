@@ -1,7 +1,7 @@
-# CLAUDE.md (scripts/)
+# CLAUDE.md (scripts/solana/)
 
 Context for future Claude sessions about the Solana send tooling in this folder and the
-`walletconsole` code behind it. The repo-wide guide is `../CLAUDE.md`; this file only covers
+`walletconsole` code behind it. The repo-wide guide is `../../CLAUDE.md`; this file only covers
 what was added for signing/sending Solana transactions. User-facing usage is in `README.md`.
 
 ## What exists
@@ -17,9 +17,9 @@ commands in the wallet-core console that do the actual signing.
 | `getLatestBlockhash.sh` | `getLatestBlockhash` (finalized) via Helius. |
 | `getBlockHeight.sh` | `getBlockHeight` (processed), still on the public mainnet-beta endpoint. |
 | `test.sh [waitSeconds]` | Fetch blockhash, wait (default 5), read block height, pass if blockhash age < 150 blocks. Still on the public endpoint. |
-| `clear-clipboard.sh` | `pbcopy </dev/null; pbpaste`. No shebang, not executable; run with `bash`. |
+| `../clear-clipboard.sh` | `pbcopy </dev/null; pbpaste`. No shebang, not executable; run with `bash`. |
 
-Console code (the real logic): `../walletconsole/lib/CommandExecutor.cpp` and `.h`.
+Console code (the real logic): `../../walletconsole/lib/CommandExecutor.cpp` and `.h`.
 
 ## Console commands added
 
@@ -149,4 +149,4 @@ blockhash right before sending.
 - The base64 encoding option and a console-side sender printout were suggested in review but not applied
   to the console (the scripts print the sender instead).
 - Git state when this was written: the new scripts and the two `walletconsole/lib` files were staged;
-  `scripts/README.md` and `scripts/CLAUDE.md` untracked. No commit was made by Claude.
+  `scripts/solana/README.md` and `scripts/solana/CLAUDE.md` untracked. No commit was made by Claude.

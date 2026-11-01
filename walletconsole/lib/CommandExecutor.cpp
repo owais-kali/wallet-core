@@ -16,15 +16,20 @@
 #include "proto/Common.pb.h"
 #include "proto/Solana.pb.h"
 #include "Solana/Address.h"
+#include "proto/Bitcoin.pb.h"
+#include "Bitcoin/Script.h"
 
+#include <TrustWalletCore/TWAnyAddress.h>
 #include <TrustWalletCore/TWAnySigner.h>
 #include <TrustWalletCore/TWCoinType.h>
+#include <TrustWalletCore/TWBitcoinSigHashType.h>
 #include <TrustWalletCore/TWData.h>
 #include <TrustWalletCore/TWSolanaAddress.h>
 #include <TrustWalletCore/TWString.h>
 
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 #include <iostream>
 #include <vector>
 #include <cassert>
@@ -88,6 +93,9 @@ void CommandExecutor::help() const {
     _out << "  solanaTokenSign <mint> <decimals> <to> <amount> <recentBlockhash> [create]" << endl;
     _out << "                          Sign an SPL token transfer (e.g. USDT) to the associated token account of <to>." << endl;
     _out << "                          <amount> is in the token's smallest unit. Add \"create\" if <to> has no token account yet." << endl;
+    _out << "  btcSign <to> <sats> <satPerVbyte> <txid:vout:sats> ..." << endl;
+    _out << "                          Sign a BTC transfer from the current mnemonic (native segwit, m/84'/0'/0'/0/0). Change goes back to" << endl;
+    _out << "                          the sender address. Each <txid:vout:sats> is an unspent output owned by that address. Returns raw tx hex." << endl;
     _out << "Transformations:" << endl;
     _out << "  hex <inp>               Encode given string to hex" << endl;
     _out << "  base64Encode <inp>      Encode given hex data to Base64" << endl;
@@ -118,6 +126,20 @@ static bool parseUint64(const string& s, uint64_t& out) {
         return false;
     }
     return true;
+}
+
+/// Parse a decimal sat/vbyte rate (up to 3 decimals) into 1/1000 sat/vbyte, range 0.001 .. 100000.
+static bool parseFeeRateMilli(const string& s, uint64_t& out) {
+    const auto dot = s.find('.');
+    const string whole = s.substr(0, dot);
+    string frac = dot == string::npos ? "" : s.substr(dot + 1);
+    if (whole.empty() || whole.size() > 6 || frac.size() > 3 || (dot != string::npos && frac.empty())) { return false; }
+    if (!all_of(frac.begin(), frac.end(), [](unsigned char c) { return std::isdigit(c); })) { return false; }
+    frac.append(3 - frac.size(), '0');
+    uint64_t w = 0;
+    if (!parseUint64(whole, w)) { return false; }
+    out = w * 1000 + std::stoull(frac);
+    return out >= 1 && out <= 100000ull * 1000;
 }
 
 bool CommandExecutor::prepareSolanaInput(const string& blockhash, Solana::Proto::SigningInput& input, string& senderAddr) {
@@ -271,6 +293,132 @@ bool CommandExecutor::signSolanaToken(const vector<string>& params, string& res)
     return signSolanaInput(input, res);
 }
 
+bool CommandExecutor::signBitcoin(const vector<string>& params, string& res) {
+    const string& to = params[1];
+    uint64_t amount = 0;
+    uint64_t milliRate = 0; // fee rate in 1/1000 sat/vbyte
+    if (!parseUint64(params[2], amount) || amount == 0 || amount > INT64_MAX) {
+        _out << "Amount must be a positive integer number of satoshis" << endl;
+        return false;
+    }
+    if (!parseFeeRateMilli(params[3], milliRate)) {
+        _out << "Fee rate must be sat/vbyte, from 0.001 to 100000, at most 3 decimals (e.g. 0.1, 0.5, 2)" << endl;
+        return false;
+    }
+    if (_keys.getMnemo().empty()) {
+        _out << "No mnemonic set; use setMnemonic or newMnemonic first" << endl;
+        return false;
+    }
+    TWString* toTW = TWStringCreateWithUTF8Bytes(to.c_str());
+    const bool toValid = TWAnyAddressIsValid(toTW, TWCoinTypeBitcoin);
+    TWStringDelete(toTW);
+    if (!toValid) {
+        _out << "Invalid recipient address" << endl;
+        return false;
+    }
+
+    string sender;
+    string priHex;
+    if (!_address.addrDefault("bitcoin", sender)) { return false; }
+    if (!_keys.priDP("bitcoin", "", priHex)) { return false; }
+    auto key = parse_hex(priHex);
+    const auto lockScript = Bitcoin::Script::lockScriptForAddress(sender, TWCoinTypeBitcoin);
+
+    Bitcoin::Proto::SigningInput input;
+    input.set_hash_type(TWBitcoinSigHashTypeAll);
+    input.set_amount(static_cast<int64_t>(amount));
+    input.set_byte_fee(static_cast<int64_t>((milliRate + 999) / 1000)); // only used for dust; the fee comes from the plan below
+    input.set_to_address(to);
+    input.set_change_address(sender);
+    input.set_coin_type(TWCoinTypeBitcoin);
+    input.add_private_key(key.data(), key.size());
+
+    for (size_t i = 4; i < params.size(); ++i) {
+        // <txid>:<vout>:<sats>
+        vector<string> f;
+        stringstream ss(params[i]);
+        for (string part; getline(ss, part, ':');) { f.push_back(part); }
+        uint64_t vout = 0;
+        uint64_t sats = 0;
+        if (f.size() != 3 || f[0].size() != 64 || !parseUint64(f[1], vout) || vout > UINT32_MAX ||
+            !parseUint64(f[2], sats) || sats > INT64_MAX) {
+            _out << "Bad UTXO \"" << params[i] << "\", expected <txid>:<vout>:<sats>" << endl;
+            return false;
+        }
+        auto hash = parse_hex(f[0]);
+        if (hash.size() != 32) {
+            _out << "Bad txid in UTXO \"" << params[i] << "\"" << endl;
+            return false;
+        }
+        std::reverse(hash.begin(), hash.end()); // display order -> internal byte order
+        auto& utxo = *input.add_utxo();
+        auto& op = *utxo.mutable_out_point();
+        op.set_hash(hash.data(), hash.size());
+        op.set_index(static_cast<uint32_t>(vout));
+        op.set_sequence(UINT32_MAX);
+        utxo.set_script(lockScript.bytes.data(), lockScript.bytes.size());
+        utxo.set_amount(static_cast<int64_t>(sats));
+        utxo.set_variant(Bitcoin::Proto::P2WPKH);
+    }
+    if (input.utxo_size() == 0) {
+        _out << "At least one UTXO is required" << endl;
+        return false;
+    }
+
+    // The signer's own planner only takes whole sat/vbyte, so build the plan here.
+    // Native segwit sizes in quarter-vbytes: overhead 10.5 vB, input 67.75 vB, output 8 + 1 + script bytes.
+    const int64_t dust = 294;
+    const auto toScript = Bitcoin::Script::lockScriptForAddress(to, TWCoinTypeBitcoin);
+    int64_t available = 0;
+    for (const auto& u : input.utxo()) { available += u.amount(); }
+    const uint64_t outBytes = (9 + toScript.bytes.size()) + (9 + lockScript.bytes.size());
+    const uint64_t quarterVb = 42 + 271 * static_cast<uint64_t>(input.utxo_size()) + 4 * outBytes;
+    const int64_t fee = static_cast<int64_t>((quarterVb * milliRate + 3999) / 4000);
+    const int64_t amt = static_cast<int64_t>(amount);
+    if (amt < dust) {
+        _out << "Amount is below the dust threshold (" << dust << " sats)" << endl;
+        return false;
+    }
+    if (available < amt + fee) {
+        _out << "Not enough funds: have " << available << " sats, need " << amt << " + " << fee << " fee" << endl;
+        return false;
+    }
+    int64_t change = available - amt - fee;
+    int64_t planFee = fee;
+    if (change < dust) { planFee += change; change = 0; } // dust change goes to the miners
+    auto& plan = *input.mutable_plan();
+    plan.set_amount(amt);
+    plan.set_available_amount(available);
+    plan.set_fee(planFee);
+    plan.set_change(change);
+    for (const auto& u : input.utxo()) { *plan.add_utxos() = u; }
+    _out << "Fee: " << planFee << " sats (~" << (quarterVb + 3) / 4 << " vbytes)" << endl;
+
+    auto inputData = input.SerializeAsString();
+    TWData* inputTW = TWDataCreateWithBytes(reinterpret_cast<const uint8_t*>(inputData.data()), inputData.size());
+    TWData* outputTW = TWAnySignerSign(inputTW, TWCoinTypeBitcoin);
+    TWDataDelete(inputTW);
+    Bitcoin::Proto::SigningOutput output;
+    bool parsed = output.ParseFromArray(TWDataBytes(outputTW), static_cast<int>(TWDataSize(outputTW)));
+    TWDataDelete(outputTW);
+
+    if (!parsed) {
+        _out << "Signing failed: could not parse signer output" << endl;
+        return false;
+    }
+    if (output.error() != Common::Proto::OK) {
+        _out << "Signing failed: " << output.error_message() << endl;
+        return false;
+    }
+    if (output.encoded().empty()) {
+        _out << "Signing failed: empty transaction" << endl;
+        return false;
+    }
+    const auto& enc = output.encoded();
+    res = hex(Data(enc.begin(), enc.end()));
+    return true;
+}
+
 bool CommandExecutor::executeOne(const string& cmd, const vector<string>& params_in, string& res) {
     if (cmd == "exit" || cmd == "quit") {
         // handled in loop
@@ -317,6 +465,8 @@ bool CommandExecutor::executeOne(const string& cmd, const vector<string>& params
     if (cmd == "solanasign") { if (!checkMinParams(params, 3)) { return false; } return signSolana(params, res); }
     if (cmd == "solanaata") { if (!checkMinParams(params, 2)) { return false; } return solanaAta(params, res); }
     if (cmd == "solanatokensign") { if (!checkMinParams(params, 5)) { return false; } return signSolanaToken(params, res); }
+
+    if (cmd == "btcsign") { if (!checkMinParams(params, 4)) { return false; } return signBitcoin(params, res); }
 
     if (cmd == "hex") { if (!checkMinParams(params, 1)) { return false; } return Util::hex(params[1], res); }
     if (cmd == "base64encode") { if (!checkMinParams(params, 1)) { return false; } return _util.base64Encode(params[1], res); }

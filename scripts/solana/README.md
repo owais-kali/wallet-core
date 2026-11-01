@@ -33,7 +33,7 @@ Shell scripts for signing and sending Solana transactions with wallet-core's `wa
 
 3. **Your mnemonic.** The send scripts ask for it with a hidden prompt. It is never passed as an argument, stored, or written to a file.
 
-Run the commands below from this `scripts/` folder.
+Run the commands below from this `scripts/solana/` folder.
 
 ## Send SOL
 
@@ -147,13 +147,13 @@ For `solanaTokenSign`, `<amount>` is in the token's smallest unit (for USDT, 1 U
 | `getLatestBlockhash.sh` | Prints the latest finalized blockhash and its `lastValidBlockHeight` (uses Helius). |
 | `getBlockHeight.sh` | Prints the current block height (uses the public mainnet-beta endpoint). |
 | `test.sh [waitSeconds]` | Fetches a blockhash, waits (default 5 seconds), and passes if the blockhash is less than 150 blocks old. Uses the public mainnet-beta endpoint. |
-| `clear-clipboard.sh` | Empties the macOS clipboard, e.g. after copying a mnemonic. Run with `bash clear-clipboard.sh`. |
+| `clear-clipboard.sh` | Empties the macOS clipboard, e.g. after copying a mnemonic. Run with `bash ../clear-clipboard.sh`. |
 
 ## Troubleshooting
 
 | Message | Cause and fix |
 |---|---|
-| `command not found` | Run from the `scripts/` folder and start the command with `./`. |
+| `command not found` | Run from the `scripts/solana/` folder and start the command with `./`. |
 | `Set HELIUS_API_KEY` | Export your key (or `RPC_URL`) in the same shell. |
 | `walletconsole not found` | Build it: `cd build && make -j8 walletconsole`. |
 | `BlockhashNotFound` | The blockhash expired. Use the one-shot scripts, or redo the manual flow faster. |
@@ -164,5 +164,5 @@ For `solanaTokenSign`, `<amount>` is in the token's smallest unit (for USDT, 1 U
 ## Safety
 
 - Never use a mnemonic you have shared or published. The well-known `abandon abandon ... about` test mnemonic controls real, publicly known addresses.
-- The mnemonic is read from a hidden prompt, but if you copied it to paste it in, it stays in your clipboard. Run `bash clear-clipboard.sh` afterwards.
+- The mnemonic is read from a hidden prompt, but if you copied it to paste it in, it stays in your clipboard. Run `bash ../clear-clipboard.sh` afterwards.
 - Check the recipient address carefully. A blockchain transaction can't be undone.
